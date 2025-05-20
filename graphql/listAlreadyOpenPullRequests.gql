@@ -1,0 +1,15 @@
+query (
+	$baseRefName: String!
+	$headRefName: String!
+	$repositoryName: String!
+	$repositoryOwner: String!
+) {
+	repository(owner: $repositoryOwner name: $repositoryName) {
+		pullRequests(baseRefName: $baseRefName first: 1 headRefName: $headRefName states: [OPEN]) {
+			nodes {
+				id
+				mergeable
+			}
+		}
+	}
+}

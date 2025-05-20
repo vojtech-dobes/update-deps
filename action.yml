@@ -1,0 +1,27 @@
+name: 'Update dependencies'
+
+description: 'Opens Pull Request with updated dependencies'
+
+inputs:
+  github_token:
+    required: true
+
+  package_manager_type:
+    description: 'Type of package manager'
+    required: true
+
+  package_manager_manifest_path:
+    description: 'File that lists dependencies'
+    required: true
+
+  exclude_deps:
+    description: "List of dependencies that won't be updated"
+    required: false
+
+  include_deps:
+    description: 'If set, only these dependencies will be updated'
+    required: false
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

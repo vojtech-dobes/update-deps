@@ -1,0 +1,15 @@
+mutation (
+	$force: Boolean
+	$oid: GitObjectID!
+	$refId: ID!
+) {
+	updateRef(
+		input: {
+			force: $force
+			oid: $oid
+			refId: $refId
+		}
+	) {
+		clientMutationId
+	}
+}

@@ -1,0 +1,15 @@
+mutation (
+	$name: String!
+	$oid: GitObjectID!
+	$repositoryId: ID!
+) {
+	createRef(
+		input: {
+			name: $name
+			oid: $oid
+			repositoryId: $repositoryId
+		}
+	) {
+		clientMutationId
+	}
+}
