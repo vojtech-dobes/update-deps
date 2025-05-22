@@ -4,14 +4,12 @@ import * as path from 'path';
 import * as semver from 'semver';
 
 import {
-	PackageManager,
-} from './PackageManager.js';
+	Executor,
+} from './Executor.js';
 
 import {
-	runCommand,
-	runCommandWithJsonOutput,
-	runCommandWithOutput,
-} from './exec.js';
+	PackageManager,
+} from './PackageManager.js';
 
 export class ComposerPackageManager implements PackageManager {
 
@@ -23,17 +21,21 @@ export class ComposerPackageManager implements PackageManager {
 		const composerJson = JSON.parse(fs.readFileSync(input.manifestFile, 'utf8'));
 		const workingDir = path.dirname(input.manifestFile);
 
-		await runCommand(workingDir, [
+		const executor = new Executor(workingDir, 'Composer');
+
+		await executor.exec('installing current dependencies', [
 			'composer',
 			'install',
 		]);
 
-		const outdatedDependencies = await runCommandWithJsonOutput(workingDir, [
-			'composer',
-			'outdated',
-			'--direct',
-			'--format=json',
-		]);
+		const outdatedDependencies = JSON.parse(
+			await executor.exec('listing outdated dependencies', [
+				'composer',
+				'outdated',
+				'--direct',
+				'--format=json',
+			]),
+		);
 
 		const pattern = /^([a-zA-Z0-9-_]+\/[a-zA-Z0-9-_]+)\s+([a-zA-Z0-9.]+)\s+requires\s+([a-zA-Z0-9-_]+\/[a-zA-Z0-9-_]+)\s+\(([^()]+)\)/;
 
@@ -52,7 +54,7 @@ export class ComposerPackageManager implements PackageManager {
 				continue;
 			}
 
-			const whyNot = await runCommandWithOutput(workingDir, [
+			const whyNot = await executor.exec(`analyzing dependencies of ${dependency.name}`, [
 				'composer',
 				'why-not',
 				dependency.name,

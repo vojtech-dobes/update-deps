@@ -8,8 +8,8 @@ import {
 } from './ComposerPackageManager.js';
 
 import {
-	runCommand,
-} from './exec.js';
+	Executor,
+} from './Executor.js';
 
 import {
 	createBranch,
@@ -128,34 +128,46 @@ try {
 	let expectedHeadOid = process.env.GITHUB_SHA;
 
 	for (let command of commands) {
-		await runCommand(command.cwd, command.args);
+		const executor = new Executor(command.cwd, '');
+
+		await executor.exec(
+			`Preparing update: ${command.description}`,
+			command.args,
+		);
 
 		const changedFiles = await packageManager.listFiles({
 			manifestFile: packageManagerManifestPath,
 		});
 
-		expectedHeadOid = await createCommitOnBranch(octokit, {
-			branchName: headRefName,
-			commitBody: command.detailedDescription ?? null,
-			commitHeadline: command.description,
-			expectedHeadOid,
-			fileChanges: {
-				additions: changedFiles.map((file) => ({
-					path: path.relative(process.env.GITHUB_WORKSPACE, file),
-					contents: fs.readFileSync(file).toString('base64'),
-				})),
-			},
-			repositoryName,
-			repositoryOwner,
-		});
+		expectedHeadOid = await core.group(
+			`Committing update: ${command.description}`,
+			async () => await createCommitOnBranch(octokit, {
+				branchName: headRefName,
+				commitBody: command.detailedDescription ?? null,
+				commitHeadline: command.description,
+				expectedHeadOid,
+				fileChanges: {
+					additions: changedFiles.map((file) => ({
+						path: path.relative(process.env.GITHUB_WORKSPACE, file),
+						contents: fs.readFileSync(file).toString('base64'),
+					})),
+				},
+				repositoryName,
+				repositoryOwner,
+			}),
+		);
 	}
 
-	await openPullRequest(octokit, {
+	core.info(`Opening pull request`);
+
+	const pullRequestNumber = await openPullRequest(octokit, {
 		baseRefName,
 		headRefName,
 		repositoryId,
 		title: `Update deps in ${packageManagerManifestRelativePath}`,
 	});
+
+	core.info(`Pull request #${pullRequestNumber} opened`);
 } catch (error: any) {
 	if (error.message !== 'finishPrematurely') {
 		core.setFailed(error.message);
