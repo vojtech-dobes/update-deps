@@ -56,75 +56,54 @@ export async function deleteRef(octokit: Octokit, params: {
 	await octokit.graphql(getQueryFromFile('deleteRef'), params);
 }
 
-export async function getExistingBranch(octokit: Octokit, params: {
+export async function loadInitialData(octokit: Octokit, params: {
 	branchName: string,
 	repositoryName: string,
 	repositoryOwner: string,
 }) {
-	try {
-		const { data } = await octokit.rest.git.getRef({
-			owner: params.repositoryOwner,
-			repo: params.repositoryName,
-			ref: `heads/${params.branchName}`,
-		});
+	const result: any = await octokit.graphql(getQueryFromFile('loadInitialData'), {
+		qualifiedName: `refs/heads/${params.branchName}`,
+		repositoryName: params.repositoryName,
+		repositoryOwner: params.repositoryOwner,
+	});
 
-		return data;
-	} catch (error: any) {
-		if (error.status) {
-			return null;
-		}
+	let existingBranch: {
+		id: string,
+		pullRequests: ReadonlyArray<{
+			id: string,
+			mergeable: 'CONFLICTING'|'MERGEABLE'|'UNKNOWN',
+		}>,
+	} | null =  null;
 
-		throw error;
+	if (result.repository.ref !== null) {
+		existingBranch = {
+			id: result.repository.ref.id,
+			pullRequests: result.repository.ref.associatedPullRequests.nodes,
+		};
 	}
-}
-
-export async function getRepositoryData(octokit: Octokit, params: {
-	repositoryName: string,
-	repositoryOwner: string,
-}): Promise<{
-	defaultBranch: string,
-	id: string,
-}> {
-	const result: any = await octokit.graphql(getQueryFromFile('getRepositoryData'), {
-			repositoryName: params.repositoryName,
-			repositoryOwner: params.repositoryOwner,
-		},
-	);
 
 	return {
 		defaultBranch: result.repository.defaultBranchRef.name,
-		id: result.repository.id,
+		existingBranch,
+		repositoryId: result.repository.id,
 	};
-}
-
-export async function listAlreadyOpenPullRequests(octokit: Octokit, params: {
-	baseRefName: string,
-	headRefName: string,
-	repositoryName: string,
-	repositoryOwner: string,
-}): Promise<ReadonlyArray<{
-	id: string,
-	mergeable: 'CONFLICTING'|'MERGEABLE'|'UNKNOWN',
-}>> {
-	const result: any = await octokit.graphql(getQueryFromFile('listAlreadyOpenPullRequests'), params);
-
-	return result.repository.pullRequests.nodes;
 }
 
 export async function openPullRequest(octokit: Octokit, params: {
 	baseRefName: string,
 	headRefName: string,
-	repositoryName: string,
-	repositoryOwner: string,
+	repositoryId: string,
 	title: string,
-}) {
-	await octokit.rest.pulls.create({
-		base: params.baseRefName,
-		head: params.headRefName,
-		owner: params.repositoryOwner,
-		repo: params.repositoryName,
+}): Promise<number> {
+	const result: any = await octokit.graphql(getQueryFromFile('createPullRequest'), {
+		baseRefName: params.baseRefName,
+		body: null,
+		headRefName: params.headRefName,
+		repositoryId: params.repositoryId,
 		title: params.title,
 	});
+
+	return result.createPullRequest.pullRequest.number;
 }
 
 export async function updateRef(octokit: Octokit, params: {

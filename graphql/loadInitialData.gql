@@ -1,0 +1,29 @@
+query (
+	$qualifiedName: String!
+	$repositoryName: String!
+	$repositoryOwner: String!
+) {
+	repository(
+		name: $repositoryName
+		owner: $repositoryOwner
+	) {
+		defaultBranchRef {
+			name
+		}
+		id
+		ref(
+			qualifiedName: $qualifiedName
+		) {
+			associatedPullRequests(
+				first: 1
+				states: [OPEN]
+			) {
+				nodes {
+					id
+					mergeable
+				}
+			}
+			id
+		}
+	}
+}
