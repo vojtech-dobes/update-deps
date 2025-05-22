@@ -4,209 +4,216 @@ import * as path from 'path';
 import * as semver from 'semver';
 
 import {
-  PackageManager,
-} from './PackageManager.js';
+	Executor,
+} from './Executor.js';
 
 import {
-  runCommand,
-  runCommandWithJsonOutput,
-  runCommandWithOutput,
-} from './exec.js';
+	PackageManager,
+} from './PackageManager.js';
 
 export class ComposerPackageManager implements PackageManager {
 
-  async listCommands(input: {
-    excludeDeps: Array<string>,
-    includeDeps: Array<string>,
-    manifestFile: string,
-  }) {
-    const composerJson = JSON.parse(fs.readFileSync(input.manifestFile, 'utf8'));
-    const workingDir = path.dirname(input.manifestFile);
+	async listCommands(input: {
+		excludeDeps: Array<string>,
+		includeDeps: Array<string>,
+		manifestFile: string,
+	}) {
+		const composerJson = JSON.parse(fs.readFileSync(input.manifestFile, 'utf8'));
+		const workingDir = path.dirname(input.manifestFile);
 
-    await runCommand(workingDir, [
-      'composer',
-      'install',
-    ]);
+		const executor = new Executor(workingDir, 'Composer');
 
-    const outdatedDependencies = await runCommandWithJsonOutput(workingDir, [
-      'composer',
-      'outdated',
-      '--direct',
-      '--format=json',
-    ]);
+		await executor.exec('installing current dependencies', [
+			'composer',
+			'install',
+			'--no-interaction',
+		]);
 
-    const pattern = /^([a-zA-Z0-9-_]+\/[a-zA-Z0-9-_]+)\s+([a-zA-Z0-9.]+)\s+requires\s+([a-zA-Z0-9-_]+\/[a-zA-Z0-9-_]+)\s+\(([^()]+)\)/;
+		const outdatedDependencies = JSON.parse(
+			await executor.exec('listing outdated dependencies', [
+				'composer',
+				'outdated',
+				'--direct',
+				'--format=json',
+				'--no-interaction',
+			]),
+		);
 
-    const conflictingPackages: Array<string> = [];
-    const groups: Record<string, Array<{
-      name: string,
-      latest: string,
-    }>> = {};
+		const pattern = /^([a-zA-Z0-9-_]+\/[a-zA-Z0-9-_]+)\s+([a-zA-Z0-9.]+)\s+requires\s+([a-zA-Z0-9-_]+\/[a-zA-Z0-9-_]+)\s+\(([^()]+)\)/;
 
-    for (let dependency of outdatedDependencies.installed) {
-      if (input.includeDeps.length > 0 && input.includeDeps.includes(dependency.name) === false) {
-        continue;
-      }
+		const conflictingPackages: Array<string> = [];
+		const groups: Record<string, Array<{
+			name: string,
+			latest: string,
+		}>> = {};
 
-      if (input.excludeDeps.includes(dependency.name)) {
-        continue;
-      }
+		for (let dependency of outdatedDependencies.installed) {
+			if (input.includeDeps.length > 0 && input.includeDeps.includes(dependency.name) === false) {
+				continue;
+			}
 
-      const whyNot = await runCommandWithOutput(workingDir, [
-        'composer',
-        'why-not',
-        dependency.name,
-        dependency.latest,
-      ], {ignoreReturnCode: true});
+			if (input.excludeDeps.includes(dependency.name)) {
+				continue;
+			}
 
-      const dependencies = [
-        {
-          name: dependency.name,
-          latest: dependency.latest,
-        },
-      ];
+			const whyNot = await executor.exec(`analyzing dependencies of ${dependency.name}`, [
+				'composer',
+				'why-not',
+				dependency.name,
+				dependency.latest,
+				'--no-interaction',
+			], {ignoreReturnCode: true});
 
-      whyNot.split('\n').forEach((line) => {
-        const match = line.match(pattern);
+			const dependencies = [
+				{
+					name: dependency.name,
+					latest: dependency.latest,
+				},
+			];
 
-        if (match === null) {
-          return;
-        }
+			whyNot.split('\n').forEach((line) => {
+				const match = line.match(pattern);
 
-        if (match[1] === dependency.name) {
-          const matchingOutdatedDependency = outdatedDependencies.installed.find((dep: {name: string}) => dep.name === match[3]);
+				if (match === null) {
+					return;
+				}
 
-          if (matchingOutdatedDependency !== undefined) {
-            dependencies.push({
-              name: match[3],
-              latest: matchingOutdatedDependency.latest,
-            });
+				if (match[1] === dependency.name) {
+					const matchingOutdatedDependency = outdatedDependencies.installed.find((dep: {name: string}) => dep.name === match[3]);
 
-            conflictingPackages.push(match[3]);
-          }
-        }
-      });
+					if (matchingOutdatedDependency !== undefined) {
+						dependencies.push({
+							name: match[3],
+							latest: matchingOutdatedDependency.latest,
+						});
 
-      groups[dependency.name] = dependencies;
-    }
+						conflictingPackages.push(match[3]);
+					}
+				}
+			});
 
-    for (const dependencyName of Object.keys(groups)) {
-      if (conflictingPackages.includes(dependencyName)) {
-        delete groups[dependencyName];
-      }
-    }
+			groups[dependency.name] = dependencies;
+		}
 
-    return Object.values(groups).map((dependencies) => {
-      const args = [
-        'composer',
-      ];
+		for (const dependencyName of Object.keys(groups)) {
+			if (conflictingPackages.includes(dependencyName)) {
+				delete groups[dependencyName];
+			}
+		}
 
-      let description: string;
-      let detailedDescription: string | null = null;
+		return Object.values(groups).map((dependencies) => {
+			const args = [
+				'composer',
+			];
 
-      if (dependencies.length > 1) {
-        description = `Update ${dependencies.length} dependencies`;
-        detailedDescription = dependencies
-          .map((dependency) => `${dependency.name} to ${dependency.latest}`)
-          .join('\n');
+			let description: string;
+			let detailedDescription: string | null = null;
 
-        args.push('require');
+			if (dependencies.length > 1) {
+				description = `Update ${dependencies.length} dependencies`;
+				detailedDescription = dependencies
+					.map((dependency) => `${dependency.name} to ${dependency.latest}`)
+					.join('\n');
 
-        let isDev = null;
+				args.push('require');
 
-        for (const dependency of dependencies) {
-          const versionConstraint = (composerJson['require']?.[dependency.name] ?? composerJson['require-dev']?.[dependency.name]).trim();
-          const isDependencyDev = dependency.name in (composerJson['require-dev'] ?? {});
+				let isDev = null;
 
-          if (isDev === null) {
-            isDev = isDependencyDev;
-          } else if (isDev !== isDependencyDev) {
-            core.warning(`Grouped --dev + --no-dev dependencies can't be updated automatically`);
-            return null;
-          }
+				for (const dependency of dependencies) {
+					const versionConstraint = (composerJson['require']?.[dependency.name] ?? composerJson['require-dev']?.[dependency.name]).trim();
+					const isDependencyDev = dependency.name in (composerJson['require-dev'] ?? {});
 
-          if (semver.satisfies(dependency.latest, versionConstraint)) {
-            args.push(`${dependency.name}:${versionConstraint}`);
-          } else {
-            let targetVersionConstraint: string;
+					if (isDev === null) {
+						isDev = isDependencyDev;
+					} else if (isDev !== isDependencyDev) {
+						core.warning(`Grouped --dev + --no-dev dependencies can't be updated automatically`);
+						return null;
+					}
 
-            if (versionConstraint.startsWith('~')) {
-              const versionConstraintSplit = versionConstraint.split('.');
+					if (semver.satisfies(dependency.latest, versionConstraint)) {
+						args.push(`${dependency.name}:${versionConstraint}`);
+					} else {
+						let targetVersionConstraint: string;
 
-              if (versionConstraintSplit.length === 3) {
-                targetVersionConstraint = `~${dependency.latest}`;
-              } else {
-                const dependencyLatestSplit = dependency.latest.split('.');
+						if (versionConstraint.startsWith('~')) {
+							const versionConstraintSplit = versionConstraint.split('.');
 
-                targetVersionConstraint = `~${dependencyLatestSplit[0]}.${dependencyLatestSplit[1]}`;
-              }
-            } else {
-              targetVersionConstraint = `^${dependency.latest}`;
-            }
+							if (versionConstraintSplit.length === 3) {
+								targetVersionConstraint = `~${dependency.latest}`;
+							} else {
+								const dependencyLatestSplit = dependency.latest.split('.');
 
-            args.push(`${dependency.name}:${targetVersionConstraint}`);
-          }
-        }
+								targetVersionConstraint = `~${dependencyLatestSplit[0]}.${dependencyLatestSplit[1]}`;
+							}
+						} else {
+							targetVersionConstraint = `^${dependency.latest}`;
+						}
 
-        args.push('--update-with-dependencies');
+						args.push(`${dependency.name}:${targetVersionConstraint}`);
+					}
+				}
 
-        if (isDev) {
-          args.push('--dev');
-        }
-      } else {
-        const dependency = dependencies[0];
-        const versionConstraint = (composerJson['require']?.[dependency.name] ?? composerJson['require-dev']?.[dependency.name]).trim();
-        const isDependencyDev = dependency.name in (composerJson['require-dev'] ?? {});
+				args.push('--update-with-dependencies');
 
-        description = `Update ${dependency.name} to ${dependency.latest}`;
+				if (isDev) {
+					args.push('--dev');
+				}
+			} else {
+				const dependency = dependencies[0];
+				const versionConstraint = (composerJson['require']?.[dependency.name] ?? composerJson['require-dev']?.[dependency.name]).trim();
+				const isDependencyDev = dependency.name in (composerJson['require-dev'] ?? {});
 
-        if (semver.satisfies(dependency.latest, versionConstraint)) {
-          args.push('update');
-          args.push(dependency.name);
-          args.push('--with-dependencies');
-        } else {
-          let targetVersionConstraint: string;
+				description = `Update ${dependency.name} to ${dependency.latest}`;
 
-          if (versionConstraint.startsWith('~')) {
-            const versionConstraintSplit = versionConstraint.split('.');
+				if (semver.satisfies(dependency.latest, versionConstraint)) {
+					args.push('update');
+					args.push(dependency.name);
+					args.push('--with-dependencies');
+				} else {
+					let targetVersionConstraint: string;
 
-            if (versionConstraintSplit.length === 3) {
-              targetVersionConstraint = `~${dependency.latest}`;
-            } else {
-              targetVersionConstraint = `~${versionConstraintSplit[0]}.${versionConstraintSplit[1]}`;
-            }
-          } else {
-            targetVersionConstraint = `^${dependency.latest}`;
-          }
+					if (versionConstraint.startsWith('~')) {
+						const versionConstraintSplit = versionConstraint.split('.');
 
-          args.push('require');
-          args.push(`${dependency.name}:${targetVersionConstraint}`);
-          args.push('--update-with-dependencies');
+						if (versionConstraintSplit.length === 3) {
+							targetVersionConstraint = `~${dependency.latest}`;
+						} else {
+							targetVersionConstraint = `~${versionConstraintSplit[0]}.${versionConstraintSplit[1]}`;
+						}
+					} else {
+						targetVersionConstraint = `^${dependency.latest}`;
+					}
 
-          if (isDependencyDev) {
-            args.push('--dev');
-          }
-        }
-      }
+					args.push('require');
+					args.push(`${dependency.name}:${targetVersionConstraint}`);
+					args.push('--update-with-dependencies');
 
-      return {
-        args,
-        cwd: workingDir,
-        description,
-        detailedDescription,
-      };
-    });
-  }
+					if (isDependencyDev) {
+						args.push('--dev');
+					}
+				}
+			}
 
-  async listFiles(input: {
-    manifestFile: string,
-  }) {
-    const workingDir = path.dirname(input.manifestFile);
+			args.push('--no-interaction');
 
-    return [
-      input.manifestFile,
-      path.join(workingDir, 'composer.lock'),
-    ];
-  }
+			return {
+				args,
+				cwd: workingDir,
+				description,
+				detailedDescription,
+			};
+		}).filter((value) => value !== null);
+	}
+
+	async listFiles(input: {
+		manifestFile: string,
+	}) {
+		const workingDir = path.dirname(input.manifestFile);
+
+		return [
+			input.manifestFile,
+			path.join(workingDir, 'composer.lock'),
+		];
+	}
 
 }

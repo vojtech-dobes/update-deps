@@ -8,16 +8,14 @@ import {
 } from './ComposerPackageManager.js';
 
 import {
-	runCommand,
-} from './exec.js';
+	Executor,
+} from './Executor.js';
 
 import {
 	createBranch,
 	createCommitOnBranch,
 	deleteRef,
-	getExistingBranch,
-	getRepositoryData,
-	listAlreadyOpenPullRequests,
+	loadInitialData,
 	openPullRequest,
 	updateRef,
 } from './github.js';
@@ -55,6 +53,10 @@ try {
 		trimWhitespace: true,
 	});
 
+	if (fs.existsSync(packageManagerManifestPath) === false) {
+		throw new Error(`Package manager manifest not found at ${packageManagerManifestPath}`);
+	}
+
 	const excludeDeps = core.getMultilineInput('exclude_deps', {
 		trimWhitespace: true,
 	});
@@ -63,72 +65,55 @@ try {
 		trimWhitespace: true,
 	});
 
-	const packageManagerManifestPathExists = fs.existsSync(packageManagerManifestPath);
-
-	if (packageManagerManifestPathExists === false) {
-		throw new Error(`Package manager manifest not found at ${packageManagerManifestPath}`);
-	}
-
 	const packageManagerManifestRelativePath = getRelativeManifestPath(packageManagerManifestPath);
 
 	const octokit = github.getOctokit(githubToken);
 
-	const {
-		owner: repositoryOwner,
-		repo: repositoryName,
-	} = github.context.repo;
-
-	const repositoryData = await getRepositoryData(octokit, { repositoryName, repositoryOwner });
-
-	const baseRefName = repositoryData.defaultBranch;
 	const headRefName = `${branchPrefix}${packageManagerManifestRelativePath}`;
+	const repositoryName = github.context.repo.repo;
+	const repositoryOwner = github.context.repo.owner;
 
-	const alreadyOpenPullRequests = await listAlreadyOpenPullRequests(octokit, {
-		baseRefName,
-		headRefName,
+	const initialData = await loadInitialData(octokit, {
+		branchName: headRefName,
 		repositoryName,
 		repositoryOwner,
 	});
 
-	const alreadyOpenConflictingPullRequests = alreadyOpenPullRequests.filter(
-		(pullRequest) => pullRequest.mergeable === 'CONFLICTING',
-	);
+	const baseRefName = initialData.defaultBranch;
+	const existingBranch = initialData.existingBranch;
+	const repositoryId = initialData.repositoryId;
 
-	if (alreadyOpenConflictingPullRequests.length > 0) {
-		const existingBranch = await getExistingBranch(octokit, {
-			branchName: headRefName,
-			repositoryName,
-			repositoryOwner,
-		});
+	if (existingBranch !== null) {
+		const alreadyOpenPullRequests = existingBranch.pullRequests;
 
-		if (existingBranch === null) {
-			throw new Error(`Branch for existing conflicting pull request must exist`);
-		}
+		const alreadyOpenConflictingPullRequests = alreadyOpenPullRequests.filter(
+			(pullRequest) => pullRequest.mergeable === 'CONFLICTING',
+		);
 
-		await updateRef(octokit, {
-			force: true,
-			oid: process.env.GITHUB_SHA,
-			refId: existingBranch.node_id,
-		});
-	} else if (alreadyOpenPullRequests.length !== 0) {
-		finishPrematurely(`Pull request for ${packageManagerManifestRelativePath} is already open`);
-	} else {
-		const existingBranch = await getExistingBranch(octokit, {
-			branchName: headRefName,
-			repositoryName,
-			repositoryOwner,
-		});
-
-		if (existingBranch !== null) {
+		if (alreadyOpenConflictingPullRequests.length > 0) {
+			await updateRef(octokit, {
+				force: true,
+				oid: process.env.GITHUB_SHA,
+				refId: existingBranch.id,
+			});
+		} else if (alreadyOpenPullRequests.length !== 0) {
+			finishPrematurely(`Pull request for ${packageManagerManifestRelativePath} is already open`);
+		} else {
 			await deleteRef(octokit, {
-				refId: existingBranch.node_id,
+				refId: existingBranch.id,
+			});
+
+			await createBranch(octokit, {
+				branchName: headRefName,
+				oid: process.env.GITHUB_SHA,
+				repositoryId,
 			});
 		}
-
+	} else {
 		await createBranch(octokit, {
 			branchName: headRefName,
 			oid: process.env.GITHUB_SHA,
-			repositoryId: repositoryData.id,
+			repositoryId,
 		});
 	}
 
@@ -143,39 +128,46 @@ try {
 	let expectedHeadOid = process.env.GITHUB_SHA;
 
 	for (let command of commands) {
-		if (command === null) {
-			continue;
-		}
+		const executor = new Executor(command.cwd, '');
 
-		await runCommand(command.cwd, command.args);
+		await executor.exec(
+			`Preparing update: ${command.description}`,
+			command.args,
+		);
 
 		const changedFiles = await packageManager.listFiles({
 			manifestFile: packageManagerManifestPath,
 		});
 
-		expectedHeadOid = await createCommitOnBranch(octokit, {
-			branchName: headRefName,
-			commitBody: command.detailedDescription ?? null,
-			commitHeadline: command.description,
-			expectedHeadOid,
-			fileChanges: {
-				additions: changedFiles.map((file) => ({
-					path: path.relative(process.env.GITHUB_WORKSPACE, file),
-					contents: fs.readFileSync(file).toString('base64'),
-				})),
-			},
-			repositoryName,
-			repositoryOwner,
-		});
+		expectedHeadOid = await core.group(
+			`Committing update: ${command.description}`,
+			async () => await createCommitOnBranch(octokit, {
+				branchName: headRefName,
+				commitBody: command.detailedDescription ?? null,
+				commitHeadline: command.description,
+				expectedHeadOid,
+				fileChanges: {
+					additions: changedFiles.map((file) => ({
+						path: path.relative(process.env.GITHUB_WORKSPACE, file),
+						contents: fs.readFileSync(file).toString('base64'),
+					})),
+				},
+				repositoryName,
+				repositoryOwner,
+			}),
+		);
 	}
 
-	await openPullRequest(octokit, {
+	core.info(`Opening pull request`);
+
+	const pullRequestNumber = await openPullRequest(octokit, {
 		baseRefName,
 		headRefName,
-		repositoryName,
-		repositoryOwner,
+		repositoryId,
 		title: `Update deps in ${packageManagerManifestRelativePath}`,
 	});
+
+	core.info(`Pull request #${pullRequestNumber} opened`);
 } catch (error: any) {
 	if (error.message !== 'finishPrematurely') {
 		core.setFailed(error.message);

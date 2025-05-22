@@ -8,7 +8,7 @@ export interface PackageManager {
 		excludeDeps: Array<string>,
 		includeDeps: Array<string>,
 		manifestFile: string,
-	}): Promise<Array<Command|null>>,
+	}): Promise<Array<Command>>,
 
 	listFiles(input: {
 		manifestFile: string,
