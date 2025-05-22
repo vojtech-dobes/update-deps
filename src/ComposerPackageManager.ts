@@ -26,6 +26,7 @@ export class ComposerPackageManager implements PackageManager {
 		await executor.exec('installing current dependencies', [
 			'composer',
 			'install',
+			'--no-interaction',
 		]);
 
 		const outdatedDependencies = JSON.parse(
@@ -34,6 +35,7 @@ export class ComposerPackageManager implements PackageManager {
 				'outdated',
 				'--direct',
 				'--format=json',
+				'--no-interaction',
 			]),
 		);
 
@@ -59,6 +61,7 @@ export class ComposerPackageManager implements PackageManager {
 				'why-not',
 				dependency.name,
 				dependency.latest,
+				'--no-interaction',
 			], {ignoreReturnCode: true});
 
 			const dependencies = [
@@ -190,6 +193,8 @@ export class ComposerPackageManager implements PackageManager {
 					}
 				}
 			}
+
+			args.push('--no-interaction');
 
 			return {
 				args,
