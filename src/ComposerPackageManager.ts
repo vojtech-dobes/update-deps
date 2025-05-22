@@ -195,7 +195,7 @@ export class ComposerPackageManager implements PackageManager {
 				description,
 				detailedDescription,
 			};
-		});
+		}).filter((value) => value !== null);
 	}
 
 	async listFiles(input: {

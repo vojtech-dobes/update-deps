@@ -143,10 +143,6 @@ try {
 	let expectedHeadOid = process.env.GITHUB_SHA;
 
 	for (let command of commands) {
-		if (command === null) {
-			continue;
-		}
-
 		await runCommand(command.cwd, command.args);
 
 		const changedFiles = await packageManager.listFiles({
