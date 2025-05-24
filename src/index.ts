@@ -97,7 +97,9 @@ try {
 				refId: existingBranch.id,
 			});
 		} else if (alreadyOpenPullRequests.length !== 0) {
-			finishPrematurely(`Pull request for ${packageManagerManifestRelativePath} is already open`);
+			core.warning(`Pull request for ${packageManagerManifestRelativePath} is already open`);
+
+			throw new Error('finish');
 		} else {
 			await deleteRef(octokit, {
 				refId: existingBranch.id,
@@ -124,6 +126,12 @@ try {
 		includeDeps,
 		manifestFile: packageManagerManifestPath,
 	});
+
+	if (commands.length === 0) {
+		core.info(`No updates needed`);
+
+		throw new Error('finish');
+	}
 
 	let expectedHeadOid = process.env.GITHUB_SHA;
 
@@ -169,15 +177,9 @@ try {
 
 	core.info(`Pull request #${pullRequestNumber} opened`);
 } catch (error: any) {
-	if (error.message !== 'finishPrematurely') {
+	if (error.message !== 'finish') {
 		core.setFailed(error.message);
 	}
-}
-
-function finishPrematurely(warning: string) {
-	core.warning(warning);
-
-	throw new Error('finishPrematurely');
 }
 
 function getRelativeManifestPath(manifestPath: string): string {
