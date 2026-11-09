@@ -22,6 +22,11 @@ inputs:
     description: 'If set, only these dependencies will be updated'
     required: false
 
+  branch_prefix:
+    description: 'Prefix of the branch with updates'
+    required: false
+    default: 'update-deps'
+
 runs:
   using: 'node24'
   main: 'dist/index.js'

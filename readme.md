@@ -30,6 +30,10 @@ List of dependencies that shouldn't be automatically updated. Expects one depend
 
 If configured, only dependencies in this list will be automatically updated. Expects one dependency per line.
 
+### `branch_prefix`
+
+Prefix of the branch with updates. The branch is named `<branch_prefix>/<path to manifest>` (eg. `update-deps/composer.json`). Default `update-deps`.
+
 
 
 ## Example usage
