@@ -1,6 +1,6 @@
 # Update deps in Github Actions
 
-![Checks](https://github.com/vojtech-dobes/update-deps/actions/workflows/checks.yml/badge.svg?branch=master&event=push)
+![Checks](https://github.com/vojtech-dobes/update-deps/actions/workflows/check-build.yml/badge.svg?branch=master&event=push)
 
 Opinionated & feature-limited alternative of Renovate for my projects.
 
