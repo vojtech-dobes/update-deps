@@ -15,6 +15,7 @@
     "outDir": "./dist",
     "pretty": true,
     "resolveJsonModule": true,
+    "rootDir": "./src",
     "strict": true,
     "strictNullChecks": true,
     "target": "ES2022"

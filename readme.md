@@ -1,6 +1,6 @@
 # Update deps in Github Actions
 
-![Checks](https://github.com/vojtech-dobes/update-deps/actions/workflows/checks.yml/badge.svg?branch=master&event=push)
+![Checks](https://github.com/vojtech-dobes/update-deps/actions/workflows/check-build.yml/badge.svg?branch=master&event=push)
 
 Opinionated & feature-limited alternative of Renovate for my projects.
 
@@ -29,6 +29,10 @@ List of dependencies that shouldn't be automatically updated. Expects one depend
 ### `include_deps`
 
 If configured, only dependencies in this list will be automatically updated. Expects one dependency per line.
+
+### `branch_prefix`
+
+Prefix of the branch with updates. The branch is named `<branch_prefix>/<path to manifest>` (eg. `update-deps/composer.json`). Default `update-deps`.
 
 
 
