@@ -69,7 +69,7 @@ try {
 
 	const octokit = github.getOctokit(githubToken);
 
-	const headRefName = `${branchPrefix}${packageManagerManifestRelativePath}`;
+	const headRefName = `${branchPrefix}/${packageManagerManifestRelativePath}`;
 	const repositoryName = github.context.repo.repo;
 	const repositoryOwner = github.context.repo.owner;
 
