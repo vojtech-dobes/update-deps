@@ -30,7 +30,7 @@ function getPackageManagerImplementation(type: string) {
 	);
 }
 
-try {
+async function main(): Promise<void> {
 	let branchPrefix = core.getInput('branch_prefix', {
 		trimWhitespace: true,
 	});
@@ -99,7 +99,7 @@ try {
 		} else if (alreadyOpenPullRequests.length !== 0) {
 			core.warning(`Pull request for ${packageManagerManifestRelativePath} is already open`);
 
-			throw new Error('finish');
+			return;
 		} else {
 			await deleteRef(octokit, {
 				refId: existingBranch.id,
@@ -130,7 +130,7 @@ try {
 	if (commands.length === 0) {
 		core.info(`No updates needed`);
 
-		throw new Error('finish');
+		return;
 	}
 
 	let expectedHeadOid = process.env.GITHUB_SHA;
@@ -176,10 +176,12 @@ try {
 	});
 
 	core.info(`Pull request #${pullRequestNumber} opened`);
+}
+
+try {
+	await main();
 } catch (error: any) {
-	if (error.message !== 'finish') {
-		core.setFailed(error.message);
-	}
+	core.setFailed(error.message);
 }
 
 function getRelativeManifestPath(manifestPath: string): string {
